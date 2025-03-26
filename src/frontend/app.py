@@ -31,9 +31,9 @@ def process_document(
     summary_method,
     preserve_structure,
     clean_text
-) -> Dict[str, Any]:
+) -> Tuple:
     """
-    Process a document using the API.
+    Process a document using the API and format the results for display.
     
     Args:
         file: Uploaded file
@@ -46,10 +46,18 @@ def process_document(
         clean_text: Whether to clean text
         
     Returns:
-        Processing results
+        Formatted outputs for Gradio interface
     """
     if file is None:
-        return {"error": "Please upload a document file"}
+        return (
+            "### Error: Please upload a document file",
+            None,
+            None,
+            None,
+            None,
+            None,
+            None
+        )
     
     try:
         # Prepare options
@@ -63,23 +71,83 @@ def process_document(
             "clean_text": clean_text
         }
         
-        # Make API request
-        response = requests.post(
-            f"{API_URL}/api/process",
-            files={"file": (os.path.basename(file.name), file, "application/octet-stream")},
-            data={"options": json.dumps(options)}
-        )
+        # Log what we're sending to the API for debugging
+        logger.info(f"Processing file: {os.path.basename(file.name)} with options: {options}")
         
-        if response.status_code != 200:
-            error_msg = response.json().get("error", f"API error: {response.status_code}")
-            return {"error": error_msg}
+        # Make API request with more detailed error handling
+        try:
+            response = requests.post(
+                f"{API_URL}/api/process",
+                files={"file": (os.path.basename(file.name), file, "application/octet-stream")},
+                data={"options": json.dumps(options)}
+            )
+            
+            logger.info(f"API response status: {response.status_code}")
+            
+            # Try to get response content for debugging
+            try:
+                response_content = response.json()
+                logger.info(f"API response: {json.dumps(response_content)[:500]}...")
+            except:
+                logger.error(f"Could not parse response as JSON. Raw response: {response.text[:500]}...")
+                response_content = {"error": "Invalid response from API", "raw": response.text[:500]}
+                
+            if response.status_code != 200:
+                error_msg = response_content.get("error", f"API error: {response.status_code}")
+                return (
+                    f"### Error: {error_msg}\n\nDetails: {response.text[:500]}",
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None
+                )
+            
+            # Parse response
+            result = response_content
+        except requests.RequestException as e:
+            logger.error(f"Request error: {str(e)}", exc_info=True)
+            return (
+                f"### Error: Failed to connect to API\n\nDetails: {str(e)}",
+                None,
+                None,
+                None,
+                None,
+                None,
+                None
+            )
         
-        # Parse response
-        return response.json()
+        # Check if result contains error before display
+        if not result.get("success", False) or "error" in result:
+            error_msg = result.get("error", "Unknown error")
+            logger.error(f"API returned error: {error_msg}")
+            return (
+                f"### Error: {error_msg}\n\nResponse details: {json.dumps(result, indent=2)[:500]}...",
+                None,
+                None,
+                None,
+                None,
+                None,
+                None
+            )
+        
+        # Format and return the results for display
+        return display_results(result)
         
     except Exception as e:
         logger.error(f"Error processing document: {str(e)}", exc_info=True)
-        return {"error": f"Error: {str(e)}"}
+        import traceback
+        tb = traceback.format_exc()
+        return (
+            f"### Error: {str(e)}\n\n```\n{tb}\n```",
+            None,
+            None,
+            None,
+            None,
+            None,
+            None
+        )
 
 def display_results(result: Dict[str, Any]) -> Tuple:
     """
@@ -266,42 +334,42 @@ def create_gradio_interface():
                 )
                 
                 # Processing options
-                with gr.Group(label="Processing Options"):
-                    with gr.Row():
-                        perform_ner = gr.Checkbox(
-                            label="Extract Entities", 
-                            value=True
-                        )
-                        perform_classification = gr.Checkbox(
-                            label="Classify Document", 
-                            value=True
-                        )
-                        perform_summarization = gr.Checkbox(
-                            label="Generate Summary", 
-                            value=True
-                        )
-                    
-                    summary_length = gr.Radio(
-                        label="Summary Length",
-                        choices=["short", "medium", "detailed"],
-                        value="medium"
+                gr.Markdown("### Processing Options")
+                with gr.Row():
+                    perform_ner = gr.Checkbox(
+                        label="Extract Entities", 
+                        value=True
                     )
-                    
-                    summary_method = gr.Radio(
-                        label="Summary Method",
-                        choices=["abstractive", "extractive", "hybrid"],
-                        value="abstractive"
+                    perform_classification = gr.Checkbox(
+                        label="Classify Document", 
+                        value=True
                     )
-                    
-                    with gr.Accordion(label="Advanced Options", open=False):
-                        preserve_structure = gr.Checkbox(
-                            label="Preserve Document Structure", 
-                            value=True
-                        )
-                        clean_text = gr.Checkbox(
-                            label="Clean/Normalize Text", 
-                            value=True
-                        )
+                    perform_summarization = gr.Checkbox(
+                        label="Generate Summary", 
+                        value=True
+                    )
+                
+                summary_length = gr.Radio(
+                    label="Summary Length",
+                    choices=["short", "medium", "detailed"],
+                    value="medium"
+                )
+                
+                summary_method = gr.Radio(
+                    label="Summary Method",
+                    choices=["abstractive", "extractive", "hybrid"],
+                    value="abstractive"
+                )
+                
+                with gr.Accordion("Advanced Options", open=False):
+                    preserve_structure = gr.Checkbox(
+                        label="Preserve Document Structure", 
+                        value=True
+                    )
+                    clean_text = gr.Checkbox(
+                        label="Clean/Normalize Text", 
+                        value=True
+                    )
                 
                 # Process button
                 process_btn = gr.Button("Process Document", variant="primary")
@@ -339,11 +407,6 @@ def create_gradio_interface():
                 preserve_structure,
                 clean_text
             ],
-            outputs=lambda: display_results({}),  # Placeholder for the first call
-            _js="() => {document.querySelector('.output-markdown').innerHTML = '<p>Processing document...</p>'}"
-        ).then(
-            fn=display_results,
-            inputs=[gr.State(None)],  # The result from process_document
             outputs=[
                 overview_output,
                 classification_output, 
@@ -352,26 +415,8 @@ def create_gradio_interface():
                 entity_plot_output,
                 entity_table_output,
                 features_output
-            ]
-        )
-        
-        # Add examples if we have them
-        gr.Examples(
-            examples=[
-                ["examples/sample_contract.pdf", True, True, True, "medium", "abstractive", True, True],
-                ["examples/sample_email.txt", True, True, True, "short", "extractive", True, True],
-                ["examples/sample_report.docx", True, True, True, "detailed", "hybrid", True, True]
             ],
-            inputs=[
-                file_input,
-                perform_ner,
-                perform_classification,
-                perform_summarization,
-                summary_length,
-                summary_method,
-                preserve_structure,
-                clean_text
-            ]
+            show_progress="full"
         )
     
     return app

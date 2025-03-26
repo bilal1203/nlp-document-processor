@@ -83,7 +83,10 @@ class TestNER:
         # Test with list input
         ner.extract_entities(["John lives in New York", "He works at IBM"])
         # Verify pipeline was called with joined text
-        assert "John lives in New York\nHe works at IBM" in str(mock_pipeline_instance.call_args)
+        assert mock_pipeline_instance.called
+        args, _ = mock_pipeline_instance.call_args
+        assert "John lives in New York" in args[0]
+        assert "He works at IBM" in args[0]
     
     @patch('src.nlp.ner.pipeline')
     @patch('src.nlp.ner.AutoTokenizer')

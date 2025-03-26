@@ -6,9 +6,6 @@ import os
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
-from fastapi.openapi.docs import get_swagger_ui_html
-from fastapi.openapi.utils import get_openapi
 
 from src.api.routes import router as api_router
 
@@ -23,8 +20,7 @@ app = FastAPI(
     title="NLP Document Processing API",
     description="API for processing documents with natural language processing",
     version="1.0.0",
-    docs_url=None,  # Disable default docs to customize
-    redoc_url=None  # Disable default redoc to customize
+    # Use default docs
 )
 
 # Add CORS middleware
@@ -75,28 +71,6 @@ async def root():
     """Redirect root to docs."""
     from fastapi.responses import RedirectResponse
     return RedirectResponse(url="/docs")
-
-# Custom docs endpoint
-@app.get("/docs", include_in_schema=False)
-async def custom_swagger_ui_html():
-    """Custom Swagger UI docs."""
-    return get_swagger_ui_html(
-        openapi_url="/openapi.json",
-        title="NLP Document Processing API",
-        swagger_js_url="https://cdn.jsdelivr.net/npm/swagger-ui-dist@4/swagger-ui-bundle.js",
-        swagger_css_url="https://cdn.jsdelivr.net/npm/swagger-ui-dist@4/swagger-ui.css",
-    )
-
-# Custom OpenAPI schema
-@app.get("/openapi.json", include_in_schema=False)
-async def get_open_api_endpoint():
-    """Custom OpenAPI schema."""
-    return get_openapi(
-        title="NLP Document Processing API",
-        version="1.0.0",
-        description="API for processing documents with natural language processing",
-        routes=app.routes,
-    )
 
 # Health check endpoint
 @app.get("/health", include_in_schema=False)

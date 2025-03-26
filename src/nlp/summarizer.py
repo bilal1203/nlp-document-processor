@@ -125,6 +125,7 @@ class DocumentSummarizer:
                     extractive_summary,
                     max_length=params["max_length"],
                     min_length=params["min_length"],
+                    max_new_tokens=params["max_length"],
                     truncation=True
                 )
                 summary = abstractive_result[0]["summary_text"]
@@ -146,6 +147,7 @@ class DocumentSummarizer:
                         processed_text,
                         max_length=params["max_length"],
                         min_length=params["min_length"],
+                        max_new_tokens=params["max_length"],
                         truncation=True
                     )
                     summary = abstractive_result[0]["summary_text"]
@@ -253,6 +255,7 @@ class DocumentSummarizer:
                     chunk_text,
                     max_length=max(30, max_length // 2),  # Smaller max for chunks
                     min_length=min(20, min_length // 2),  # Smaller min for chunks
+                    max_new_tokens=max(30, max_length // 2),
                     truncation=True
                 )
                 
@@ -274,6 +277,7 @@ class DocumentSummarizer:
                 chunk_text,
                 max_length=max(30, max_length // 2),
                 min_length=min(20, min_length // 2),
+                max_new_tokens=max(30, max_length // 2),
                 truncation=True
             )
             
@@ -287,16 +291,36 @@ class DocumentSummarizer:
             combined_tokens = len(self.tokenizer.encode(combined_summary))
             
             if combined_tokens > max_token_length:
-                # Recursively summarize the summaries
-                return self._abstractive_summarization_chunked(
-                    combined_summary, max_length, min_length
+                # Get a subset of the combined summary that fits within limits
+                summary_sentences = re.split(r'(?<!\w\.\w.)(?<![A-Z][a-z]\.)(?<=\.|\?|\!)\s', combined_summary)
+                shortened_summary = ""
+                current_length = 0
+                
+                for sentence in summary_sentences:
+                    sentence_tokens = len(self.tokenizer.encode(sentence))
+                    if current_length + sentence_tokens < max_token_length:
+                        shortened_summary += sentence + " "
+                        current_length += sentence_tokens
+                    else:
+                        break
+                
+                # Final summarization of the shortened summary
+                final_result = self.summarizer(
+                    shortened_summary.strip(),
+                    max_length=max_length,
+                    min_length=min_length,
+                    max_new_tokens=max_length,
+                    truncation=True
                 )
+                
+                return final_result[0]["summary_text"]
             else:
                 # Final summarization of the combined summaries
                 final_result = self.summarizer(
                     combined_summary,
                     max_length=max_length,
                     min_length=min_length,
+                    max_new_tokens=max_length,
                     truncation=True
                 )
                 
